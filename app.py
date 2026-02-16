@@ -1,9 +1,9 @@
 import streamlit as st
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="OPTIVIA MARGIN PROTECTOR", page_icon="🛡️", layout="wide")
+# --- CONFIGURATION (Titre de l'onglet) ---
+st.set_page_config(page_title="CALCULATEUR OPTIVIA", page_icon="🚛", layout="wide")
 
-# --- CSS PERSONNALISÉ (MOBILE FRIENDLY) ---
+# --- STYLE VISUEL ---
 st.markdown("""
     <style>
     .client-price { font-size: 32px !important; font-weight: bold; color: #1E3A8A; } 
@@ -12,25 +12,25 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- SIDEBAR : PARAMÈTRES CACHÉS ---
+# --- MENU LATÉRAL (Réglages cachés) ---
 with st.sidebar:
     st.header("⚙️ Réglages Tarifret")
-    base_km_sell = st.number_input("Vente / Km (€)", value=1.55, step=0.05)
-    fixed_sell = st.number_input("Fixe Vente (€)", value=250, step=10)
+    base_km_sell = st.number_input("Prix Vente / Km (€)", value=1.55, step=0.05)
+    fixed_sell = st.number_input("Forfait Fixe Vente (€)", value=250, step=10)
     st.divider()
-    target_margin = st.slider("Marge Visée (%)", 15, 40, 25)
+    target_margin = st.slider("Objectif de Marge (%)", 15, 40, 25)
 
-# --- TÊTE DE PAGE ---
-st.title("🛡️ OPTIVIA CALCULATOR")
-st.caption(f"Objectif Marge : {target_margin}%")
+# --- TITRE DE LA PAGE ---
+st.title("🚛 CALCULATEUR OPTIVIA")
+st.caption(f"Objectif de Marge verrouillé à : {target_margin}%")
 
 # --- BLOC 1 : LE TRAJET ---
 col1, col2 = st.columns(2)
 with col1:
     distance = st.number_input("📍 Distance (km)", min_value=1, value=450)
 with col2:
-    # Logique Tarifret simplifiée
-    unit_type = st.radio("Unité", ["Palettes", "Mètres", "Complet"], horizontal=True)
+    # Choix de l'unité
+    unit_type = st.radio("Unité de chargement", ["Palettes (80x120)", "Mètres de plancher", "Camion Complet"], horizontal=True)
 
 # --- BLOC 2 : QUANTITÉ & OPTIONS ---
 col3, col4 = st.columns(2)
@@ -41,40 +41,46 @@ with col3:
     ratio = 1.0
     cle_tarif = "Standard"
     
-    if unit_type == "Palettes":
-        qty = st.number_input("Nb Palettes", 1, 33, 3)
+    # Logique de calcul automatique (Cerveau Tarifret)
+    if unit_type == "Palettes (80x120)":
+        qty = st.number_input("Nombre de Palettes", 1, 33, 3)
         ratio = qty / 33
         if qty <= 5: 
-            power_factor = 0.55 # P60
-            cle_tarif = "P60 (Fort)"
+            power_factor = 0.55 # Courbe P60 (Prix fort petit lot)
+            cle_tarif = "P60 (Petit Lot)"
         elif qty <= 15:
-            power_factor = 0.75 # P39
-            cle_tarif = "P39 (Moyen)"
+            power_factor = 0.75 # Courbe P39
+            cle_tarif = "P39 (Lot Moyen)"
         else:
-            power_factor = 0.90 # P26
-    elif unit_type == "Mètres":
-        metres = st.number_input("Mètres Plancher", 0.0, 13.6, 2.0)
+            power_factor = 0.90 # Courbe P26
+            cle_tarif = "P26 (Gros Lot)"
+            
+    elif unit_type == "Mètres de plancher":
+        metres = st.number_input("Mètres de Plancher", 0.0, 13.6, 2.0)
         ratio = metres / 13.6
         if metres <= 2.0:
             power_factor = 0.55
-            cle_tarif = "P60 (Fort)"
+            cle_tarif = "P60 (Petit Lot)"
         else:
             power_factor = 0.85
+            cle_tarif = "Standard"
     else: # Complet
         ratio = 1.0
         power_factor = 1.0
+        cle_tarif = "Complet"
 
 with col4:
+    st.write("Options & Forfaits")
     opt_hayon = st.checkbox("Hayon (+50€)")
-    opt_stop = st.checkbox("Stop Sup (+50€)")
-    opt_adr = st.checkbox("ADR (+20%)")
-    opt_frais = st.checkbox("Frais Dossier (+15€)", value=True)
+    opt_stop = st.checkbox("Stop Supplémentaire (+50€)")
+    opt_adr = st.checkbox("ADR / Dangereux (+20%)")
+    opt_frais = st.checkbox("Frais de Dossier (+15€)", value=True)
 
-# --- CALCULS ---
+# --- MOTEUR DE CALCUL ---
 full_price = (distance * base_km_sell) + fixed_sell
 base_client = full_price * (ratio ** power_factor)
 
-# Minimum taxation (Sécurité)
+# Sécurité : Pas de prix inférieur à 120€
 if base_client < 120: base_client = 120
 
 options = 0
@@ -89,20 +95,20 @@ if opt_adr:
 FINAL_SELL = base_client + options
 MAX_BUY = FINAL_SELL * (1 - (target_margin/100))
 
-# --- RÉSULTATS ---
+# --- AFFICHAGE DES RÉSULTATS ---
 st.divider()
 c_res1, c_res2 = st.columns(2)
 
 with c_res1:
     st.markdown('<div class="kpi-card">', unsafe_allow_html=True)
-    st.markdown("### 💰 CLIENT")
-    st.markdown(f'<p class="client-price">{FINAL_SELL:.0f} €</p>', unsafe_allow_html=True)
-    st.caption(f"Clé: {cle_tarif}")
+    st.markdown("### 💰 PRIX CLIENT")
+    st.markdown(f'<p class="client-price">{FINAL_SELL:.0f} € HT</p>', unsafe_allow_html=True)
+    st.caption(f"Tarif calculé sur base : {cle_tarif}")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with c_res2:
     st.markdown('<div class="kpi-card" style="border-left: 5px solid #DC2626;">', unsafe_allow_html=True)
     st.markdown("### 🛑 ACHAT MAX")
-    st.markdown(f'<p class="buy-limit">{MAX_BUY:.0f} €</p>', unsafe_allow_html=True)
-    st.caption(f"Pour garder {target_margin}%")
+    st.markdown(f'<p class="buy-limit">{MAX_BUY:.0f} € HT</p>', unsafe_allow_html=True)
+    st.caption(f"Budget transporteur pour {target_margin}% de marge")
     st.markdown('</div>', unsafe_allow_html=True)
