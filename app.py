@@ -10,7 +10,6 @@ st.markdown("""
     .buy-limit { font-size: 32px !important; font-weight: bold; color: #DC2626; } 
     .kpi-card { background-color: #F3F4F6; padding: 15px; border-radius: 10px; border-left: 5px solid #1E3A8A; margin-bottom: 10px;}
     .zone-info { color: #854d0e; background-color: #fef9c3; padding: 10px; border-radius: 5px; font-weight: bold; margin-bottom: 10px;}
-    .big-input .stNumberInput > div > div > input { font-size: 20px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -120,20 +119,16 @@ ZONES_FORTES = ["59", "62", "75", "92", "93", "94", "69", "67", "68", "44", "35"
 def get_flux_coef(dep_full_name_start, dep_full_name_end):
     code_start = dep_full_name_start.split(" - ")[0]
     code_end = dep_full_name_end.split(" - ")[0]
-    
     coef = 1.0
-    # 1. Départ Zone Forte vers Province (Cher)
     if code_start in ZONES_FORTES and code_end not in ZONES_FORTES:
         coef = 1.05 
-    # 2. Retour Province vers Zone Forte (Moins cher)
     elif code_start not in ZONES_FORTES and code_end in ZONES_FORTES:
         coef = 0.92 
     return coef
 
-# --- SIDEBAR (NOUVEAUX RÉGLAGES MARCHÉ) ---
+# --- SIDEBAR (PARAMETRES OPTIVIA) ---
 with st.sidebar:
     st.header("⚙️ Moteur Tarifret")
-    # J'ai baissé ces valeurs pour coller à ton marché (655€ pour 441km)
     base_km_sell = st.number_input("Prix Vente / Km (€)", value=1.30, step=0.05)
     fixed_sell = st.number_input("Fixe Vente (€)", value=80, step=10)
     st.divider()
@@ -147,11 +142,11 @@ st.subheader("📍 Origine & Destination")
 
 c1, c2 = st.columns([1, 1])
 with c1:
-    dept_start = st.selectbox("DÉPART", list(FULL_GEO_DATA.keys()), index=10) # 11 Aude
+    dept_start = st.selectbox("DÉPART", list(FULL_GEO_DATA.keys()), index=10) # 11
     city_start = st.selectbox("Ville Départ", FULL_GEO_DATA[dept_start])
 
 with c2:
-    dept_end = st.selectbox("ARRIVÉE", list(FULL_GEO_DATA.keys()), index=16) # 17 Charente
+    dept_end = st.selectbox("ARRIVÉE", list(FULL_GEO_DATA.keys()), index=16) # 17
     city_end = st.selectbox("Ville Arrivée", FULL_GEO_DATA[dept_end])
 
 # --- DISTANCE & FLUX ---
@@ -160,7 +155,6 @@ c_dist, c_info = st.columns([1, 2])
 
 with c_dist:
     st.markdown("👇 **SAISIR LES KM ICI**")
-    # MISE A ZERO PAR DEFAUT
     dist_reelle = st.number_input("Distance Réelle (km)", min_value=0, value=0)
     st.caption("Distance Google Maps")
 
@@ -180,9 +174,8 @@ with c_info:
     if flux_coef != 1.0:
         st.markdown(f"<div class='zone-info' style='color:{flux_color}'>{flux_label}</div>", unsafe_allow_html=True)
     
-    # Alerte si distance est à 0
     if dist_reelle == 0:
-        st.warning("⚠️ Merci de saisir la distance réelle pour calculer le prix.")
+        st.warning("⚠️ Merci de saisir la distance réelle.")
     else:
         st.success(f"Calcul sur base {dist_reelle} km")
 
@@ -199,20 +192,48 @@ with c_qty:
     if "80x120" in unit_type:
         qty = st.number_input("Nb Pal (80x120)", 1, 33, 3)
         ratio = qty / 33
-        if qty <= 5: power_factor = 0.55; cle_tarif = "P60 (Petit Lot)"
-        elif qty <= 15: power_factor = 0.75; cle_tarif = "P39 (Moyen)"
-        else: power_factor = 0.90; cle_tarif = "P26 (Gros)"
+        if qty == 1:
+            power_factor = 0.40 # SUPER BOOST 1 PAL
+            cle_tarif = "P40 (Forfait Mono-Pal)"
+        elif qty <= 5: 
+            power_factor = 0.45 # P45 (Lissé pour que 2 > 1)
+            cle_tarif = "P45 (Petit Lot)"
+        elif qty <= 15: 
+            power_factor = 0.75 # P39
+            cle_tarif = "P39 (Lot Moyen)"
+        else: 
+            power_factor = 0.90 # P26
+            cle_tarif = "P26 (Gros Lot)"
+
     elif "100x120" in unit_type:
         qty = st.number_input("Nb Pal (100x120)", 1, 26, 3)
         ratio = qty / 26
-        if qty <= 4: power_factor = 0.55; cle_tarif = "P60"
-        elif qty <= 12: power_factor = 0.75; cle_tarif = "P39"
-        else: power_factor = 0.90; cle_tarif = "P26"
+        # LOGIQUE RENFORCÉE POUR LA 100x120
+        if qty == 1:
+            power_factor = 0.40 # SUPER BOOST
+            cle_tarif = "P40 (Forfait Mono-Pal)"
+        elif qty <= 4: 
+            power_factor = 0.45 
+            cle_tarif = "P45 (Petit Lot)"
+        elif qty <= 12: 
+            power_factor = 0.75 
+            cle_tarif = "P39 (Moyen)"
+        else: 
+            power_factor = 0.90 
+            cle_tarif = "P26"
+
     elif "Mètres" in unit_type:
         metres = st.number_input("Mètres", 0.0, 13.6, 2.0)
         ratio = metres / 13.6
-        if metres <= 2.4: power_factor = 0.55; cle_tarif = "P60"
-        else: power_factor = 0.85; cle_tarif = "Standard"
+        if metres <= 1.0:
+            power_factor = 0.40 # Boost petit métrage
+            cle_tarif = "Forfait Petit Métrage"
+        elif metres <= 2.4: 
+            power_factor = 0.55
+            cle_tarif = "P60"
+        else: 
+            power_factor = 0.85
+            cle_tarif = "Standard"
     else:
         cle_tarif = "Complet"
 
@@ -232,22 +253,16 @@ with c_opt3:
 
 # --- MOTEUR DE CALCUL FINAL ---
 if dist_reelle > 0:
-    # 1. Base km (AVEC NOUVEAUX PARAMETRES)
     base_price = (dist_reelle * base_km_sell) + fixed_sell
-
-    # 2. Application Coef Flux
     base_price_geo = base_price * flux_coef 
 
-    # 3. Application Partiel
+    # Application Courbe + Boost Mono-Pal
     final_base = base_price_geo * (ratio ** power_factor)
 
     if final_base < 120: final_base = 120
 
-    # 4. Majoration Montagne
-    if opt_montagne:
-        final_base = final_base * 1.25
+    if opt_montagne: final_base = final_base * 1.25
 
-    # 5. Options
     options_val = 0
     if opt_hayon: options_val += 50
     if opt_stop: options_val += 50
