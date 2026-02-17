@@ -4,7 +4,6 @@ import io
 import os
 import math
 import requests
-import time
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="CALCULATEUR OPTIVIA", page_icon="🚛", layout="wide")
@@ -146,40 +145,29 @@ FULL_GEO_DATA = {
     "95 - Val-d'Oise": ["Pontoise"],
 }
 
-# --- MOTEUR DE DISTANCE HYBRIDE (API + MATHS) ---
+# --- MOTEUR DE DISTANCE ---
 def get_route_distance(dept_start, dept_end):
-    # 1. Si même département
-    if dept_start == dept_end:
-        return 50 # Forfait tour de ville
-
-    # 2. Récupération Coordonnées
-    if dept_start not in DEPT_GPS or dept_end not in DEPT_GPS:
-        return 0
+    if dept_start == dept_end: return 50
+    if dept_start not in DEPT_GPS or dept_end not in DEPT_GPS: return 0
     
     lat1, lon1 = DEPT_GPS[dept_start]
     lat2, lon2 = DEPT_GPS[dept_end]
 
-    # 3. Essai connexion OSRM (Vrai routage)
     try:
-        # URL de l'API Open Source Routing Machine
         url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
-        r = requests.get(url, timeout=2) # Timeout court pour pas bloquer
+        r = requests.get(url, timeout=2)
         if r.status_code == 200:
             data = r.json()
-            dist_meters = data["routes"][0]["distance"]
-            return int(dist_meters / 1000) # Conversion en km
+            return int(data["routes"][0]["distance"] / 1000)
     except:
-        pass # Si l'API plante, on passe au calcul mathématique
+        pass
     
-    # 4. Fallback : Calcul Mathématique (Haversine x 1.30)
     R = 6371 
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
     a = math.sin(dlat/2) * math.sin(dlat/2) + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2) * math.sin(dlon/2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    dist_vol = R * c
-    return int(dist_vol * 1.30)
-
+    return int(R * c * 1.30)
 
 # --- FONCTION FLUX ---
 ZONES_FORTES = ["59", "62", "75", "92", "93", "94", "69", "67", "68", "44", "35", "31"]
@@ -187,21 +175,17 @@ def get_flux_coef(dep_full_name_start, dep_full_name_end):
     code_start = dep_full_name_start.split(" - ")[0]
     code_end = dep_full_name_end.split(" - ")[0]
     coef = 1.0
-    if code_start in ZONES_FORTES and code_end not in ZONES_FORTES:
-        coef = 1.05 
-    elif code_start not in ZONES_FORTES and code_end in ZONES_FORTES:
-        coef = 0.92 
+    if code_start in ZONES_FORTES and code_end not in ZONES_FORTES: coef = 1.05 
+    elif code_start not in ZONES_FORTES and code_end in ZONES_FORTES: coef = 0.92 
     return coef
 
-# --- GÉNÉRATEUR EXCEL ---
-def generate_excel_grid(dept_depart, base_km, base_fixe):
+# --- GÉNÉRATEUR EXCEL (AVEC PLANCHER RÉGIONAL) ---
+def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
     output = io.BytesIO()
     code_dep_start = dept_depart.split(" - ")[0]
     
-    # Barre de progression
     progress_bar = st.progress(0)
     status_text = st.empty()
-    
     total_steps = len(FULL_GEO_DATA)
     current_step = 0
     
@@ -223,22 +207,16 @@ def generate_excel_grid(dept_depart, base_km, base_fixe):
             "SIRET: 880 457 437 00023"
         ]
 
-        # Pré-calcul des distances pour ne pas le refaire 3 fois (1 fois pour les 3 onglets)
+        # Cache distances
         DISTANCES_CACHE = {}
-        
-        status_text.text("🚀 Interrogation du satellite de routage...")
-        
+        status_text.text("🚀 Calcul des itinéraires en cours...")
         for dept_dest in FULL_GEO_DATA.keys():
             code_dep_dest = dept_dest.split(" - ")[0]
-            # Appel API ou Maths
             dist = get_route_distance(code_dep_start, code_dep_dest)
             DISTANCES_CACHE[dept_dest] = dist
-            
-            # Mise à jour barre
             current_step += 1
             progress_bar.progress(current_step / total_steps)
-            
-        status_text.text("✅ Distances calculées. Génération du fichier...")
+        status_text.text("✅ Génération du fichier Excel...")
 
         def create_sheet(sheet_name, max_pal, pal_type_label):
             ws = workbook.add_worksheet(sheet_name)
@@ -262,6 +240,7 @@ def generate_excel_grid(dept_depart, base_km, base_fixe):
             
             ws.write(start_row + 5, 0, f"GRILLE TARIFAIRE AU DÉPART DE : {dept_depart}", fmt_title)
             ws.write(start_row + 6, 0, f"Type de palette : {pal_type_label}", fmt_info)
+            ws.write(start_row + 7, 0, f"Plancher Complet Régional appliqué : {min_regional} € HT", fmt_info)
             
             headers = ["Département", "Distance (km)"] + [f"{i} Pal" for i in range(1, max_pal + 1)]
             row_header = start_row + 8
@@ -273,7 +252,7 @@ def generate_excel_grid(dept_depart, base_km, base_fixe):
                 flux = get_flux_coef(dept_depart, dept_dest)
                 
                 ws.write(row, 0, dept_dest)
-                ws.write(row, 1, dist_val, fmt_km) # Distance API
+                ws.write(row, 1, dist_val, fmt_km)
                 
                 for i in range(1, max_pal + 1):
                     col_idx = i + 1
@@ -297,9 +276,19 @@ def generate_excel_grid(dept_depart, base_km, base_fixe):
                         elif i <= 12: factor = 0.80
                         else: factor = 0.95
                     
-                    price_base = f"($B{row+1}*{base_km}+{base_fixe})*{flux}"
+                    # --- NOUVELLE LOGIQUE PLANCHER REGIONAL ---
+                    # 1. Calcul Prix Théorique du Complet pour cette ligne
+                    price_full_theo = f"(($B{row+1}*{base_km}+{base_fixe})*{flux})"
+                    
+                    # 2. Application du Plancher Régional sur le Complet
+                    # Le complet vaut soit le calcul km, soit le plancher (ex: 320€)
+                    price_full_floored = f"MAX({price_full_theo}, {min_regional})"
+                    
+                    # 3. Application de la courbe Partiel sur ce socle solide
                     curve = f"POWER({ratio},{factor})"
-                    formula = f"=IF($B{row+1}>0, MAX(120, {price_base} * {curve}), 0)"
+                    
+                    # 4. Formule Finale (avec le petit plancher unitaire 120€)
+                    formula = f"=IF($B{row+1}>0, MAX(120, {price_full_floored} * {curve}), 0)"
                     
                     style = fmt_bold_price if i == max_pal else fmt_currency
                     ws.write_formula(row, col_idx, formula, style)
@@ -326,6 +315,7 @@ with st.sidebar:
     st.divider()
     base_km_sell = st.number_input("Prix Vente / Km (€)", value=1.30, step=0.05)
     fixed_sell = st.number_input("Fixe Vente (€)", value=80, step=10)
+    min_regional = st.number_input("Plancher Régional Complet (€)", value=320, step=10, help="Prix minimum d'un camion complet, même pour 10km")
     target_margin = st.slider("Marge Visée (%)", 15, 40, 25)
 
 # --- MODE 1 : CALCULATEUR ---
@@ -345,10 +335,8 @@ if mode == "Calculateur Rapide":
     c_dist, c_info = st.columns([1, 2])
 
     with c_dist:
-        # Calcul auto via API ou Maths
         code_s = dept_start.split(" - ")[0]
         code_e = dept_end.split(" - ")[0]
-        # On utilise la fonction qui essaie l'API
         auto_dist = get_route_distance(code_s, code_e)
         
         st.markdown("👇 **SAISIR LES KM ICI**")
@@ -411,9 +399,16 @@ if mode == "Calculateur Rapide":
         base_price = (dist_reelle * base_km_sell) + fixed_sell
         base_price_geo = base_price * flux_coef 
         
+        # --- APPLICATION PLANCHER REGIONAL (Mode Calculateur) ---
+        if base_price_geo < min_regional:
+            # On affiche une petite info pour dire que le plancher a été touché
+            st.toast(f"ℹ️ Distance courte : Application du plancher complet à {min_regional}€")
+            base_price_geo = min_regional
+
         final_base = base_price_geo * (ratio ** power_factor)
         if final_base < 120: final_base = 120
         if opt_montagne: final_base = final_base * 1.25
+        
         options_val = 0
         if opt_hayon: options_val += 50
         if opt_adr: 
@@ -457,10 +452,8 @@ else:
     
     st.info("⚠️ **Patience :** Le calcul des distances réelles pour 95 départements prend environ 15 secondes.")
     
-    # On appelle la fonction de génération
-    # Note : Le bouton relance le script, donc le calcul se fait à ce moment là
     if st.button("LANCER LE CALCUL ET PRÉPARER LE FICHIER"):
-        excel_data = generate_excel_grid(dept_export, base_km_sell, fixed_sell)
+        excel_data = generate_excel_grid(dept_export, base_km_sell, fixed_sell, min_regional)
         
         st.success("✅ Fichier prêt !")
         st.download_button(
