@@ -21,7 +21,7 @@ with st.sidebar:
     target_margin = st.slider("Objectif de Marge (%)", 15, 40, 25)
 
 # --- TITRE DE LA PAGE ---
-st.title("🚛 CALCULATEUR OPTIVIA")
+st.title("🚀 OPTIVIA DEAL MAKER")
 st.caption(f"Objectif de Marge verrouillé à : {target_margin}%")
 
 # --- BLOC 1 : LE TRAJET ---
