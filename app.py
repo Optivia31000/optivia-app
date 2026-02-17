@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import io
 import os
+import math
+import requests
+import time
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="CALCULATEUR OPTIVIA", page_icon="🚛", layout="wide")
@@ -16,7 +19,35 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- DONNÉES GÉOGRAPHIQUES ---
+# --- BASE DE DONNÉES GPS (Lat, Lon) ---
+DEPT_GPS = {
+    "01": (46.2052, 5.2255), "02": (49.5641, 3.6199), "03": (46.5681, 3.3344), "04": (44.0922, 6.2369),
+    "05": (44.5632, 6.0796), "06": (43.7102, 7.2620), "07": (44.7333, 4.5955), "08": (49.7738, 4.7198),
+    "09": (42.9644, 1.6054), "10": (48.2973, 4.0744), "11": (43.2122, 2.3537), "12": (44.3504, 2.5726),
+    "13": (43.2965, 5.3698), "14": (49.1829, -0.3707), "15": (44.9278, 2.4423), "16": (45.6484, 0.1562),
+    "17": (46.1603, -1.1511), "18": (47.0810, 2.3988), "19": (45.2673, 1.7709), "20": (41.9192, 8.7386),
+    "21": (47.3220, 5.0415), "22": (48.5141, -2.7658), "23": (46.1712, 1.8679), "24": (45.1839, 0.7214),
+    "25": (47.2378, 6.0241), "26": (44.9333, 4.8917), "27": (49.0274, 1.1511), "28": (48.4439, 1.4890),
+    "29": (48.0000, -4.1000), "30": (43.8367, 4.3601), "31": (43.6047, 1.4442), "32": (43.6465, 0.5862),
+    "33": (44.8378, -0.5792), "34": (43.6108, 3.8767), "35": (48.1173, -1.6778), "36": (46.8115, 1.6915),
+    "37": (47.3941, 0.6848), "38": (45.1885, 5.7245), "39": (46.6753, 5.5539), "40": (43.8920, -0.5004),
+    "41": (47.5861, 1.3359), "42": (45.4397, 4.3872), "43": (45.0435, 3.8837), "44": (47.2184, -1.5536),
+    "45": (47.9030, 1.9093), "46": (44.4491, 1.4366), "47": (44.2031, 0.6156), "48": (44.5167, 3.5000),
+    "49": (47.4784, -0.5632), "50": (49.1171, -1.0945), "51": (48.9566, 4.3676), "52": (48.1119, 5.1438),
+    "53": (48.0706, -0.7719), "54": (48.6921, 6.1844), "55": (48.7734, 5.1612), "56": (47.6582, -2.7608),
+    "57": (49.1193, 6.1757), "58": (46.9909, 3.1628), "59": (50.6292, 3.0573), "60": (49.4317, 2.0898),
+    "61": (48.4307, 0.0924), "62": (50.2910, 2.7775), "63": (45.7772, 3.0870), "64": (43.2951, -0.3708),
+    "65": (43.2333, 0.0833), "66": (42.6987, 2.8959), "67": (48.5734, 7.7521), "68": (47.7495, 7.3398),
+    "69": (45.7640, 4.8357), "70": (47.6198, 6.1544), "71": (46.3069, 4.8288), "72": (48.0061, 0.1996),
+    "73": (45.5646, 5.9178), "74": (45.8992, 6.1294), "75": (48.8566, 2.3522), "76": (49.4432, 1.0999),
+    "77": (48.5397, 2.6601), "78": (48.8049, 2.1204), "79": (46.3237, -0.4648), "80": (49.8941, 2.2957),
+    "81": (43.9287, 2.1464), "82": (44.0176, 1.3558), "83": (43.1242, 5.9280), "84": (43.9493, 4.8055),
+    "85": (46.6705, -1.4264), "86": (46.5802, 0.3404), "87": (45.8336, 1.2611), "88": (48.1744, 6.4512),
+    "89": (47.7985, 3.5670), "90": (47.6397, 6.8638), "91": (48.6298, 2.4418), "92": (48.8924, 2.2154),
+    "93": (48.9105, 2.4392), "94": (48.7904, 2.4556), "95": (49.0389, 2.0776)
+}
+
+# --- DONNÉES GÉOGRAPHIQUES (Villes) ---
 FULL_GEO_DATA = {
     "01 - Ain": ["Belley", "Bourg-en-Bresse", "Gex", "Nantua"],
     "02 - Aisne": ["Château-Thierry", "Laon", "Saint-Quentin", "Soissons", "Vervins"],
@@ -115,6 +146,41 @@ FULL_GEO_DATA = {
     "95 - Val-d'Oise": ["Pontoise"],
 }
 
+# --- MOTEUR DE DISTANCE HYBRIDE (API + MATHS) ---
+def get_route_distance(dept_start, dept_end):
+    # 1. Si même département
+    if dept_start == dept_end:
+        return 50 # Forfait tour de ville
+
+    # 2. Récupération Coordonnées
+    if dept_start not in DEPT_GPS or dept_end not in DEPT_GPS:
+        return 0
+    
+    lat1, lon1 = DEPT_GPS[dept_start]
+    lat2, lon2 = DEPT_GPS[dept_end]
+
+    # 3. Essai connexion OSRM (Vrai routage)
+    try:
+        # URL de l'API Open Source Routing Machine
+        url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
+        r = requests.get(url, timeout=2) # Timeout court pour pas bloquer
+        if r.status_code == 200:
+            data = r.json()
+            dist_meters = data["routes"][0]["distance"]
+            return int(dist_meters / 1000) # Conversion en km
+    except:
+        pass # Si l'API plante, on passe au calcul mathématique
+    
+    # 4. Fallback : Calcul Mathématique (Haversine x 1.30)
+    R = 6371 
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2) * math.sin(dlat/2) + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2) * math.sin(dlon/2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    dist_vol = R * c
+    return int(dist_vol * 1.30)
+
+
 # --- FONCTION FLUX ---
 ZONES_FORTES = ["59", "62", "75", "92", "93", "94", "69", "67", "68", "44", "35", "31"]
 def get_flux_coef(dep_full_name_start, dep_full_name_end):
@@ -130,6 +196,14 @@ def get_flux_coef(dep_full_name_start, dep_full_name_end):
 # --- GÉNÉRATEUR EXCEL ---
 def generate_excel_grid(dept_depart, base_km, base_fixe):
     output = io.BytesIO()
+    code_dep_start = dept_depart.split(" - ")[0]
+    
+    # Barre de progression
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    total_steps = len(FULL_GEO_DATA)
+    current_step = 0
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
@@ -139,10 +213,9 @@ def generate_excel_grid(dept_depart, base_km, base_fixe):
         fmt_info = workbook.add_format({'font_size': 10, 'italic': True})
         fmt_header = workbook.add_format({'bold': True, 'bg_color': '#1E3A8A', 'font_color': 'white', 'border': 1, 'align': 'center'})
         fmt_currency = workbook.add_format({'num_format': '#,##0 €', 'border': 1})
-        fmt_km = workbook.add_format({'num_format': '0', 'bg_color': '#FEF3C7', 'border': 1})
+        fmt_km = workbook.add_format({'num_format': '0', 'border': 1, 'align': 'center', 'bg_color': '#E0F2F1'}) 
         fmt_bold_price = workbook.add_format({'num_format': '#,##0 €', 'border': 1, 'bold': True, 'bg_color': '#D1FAE5'})
 
-        # Informations Société
         company_info = [
             "OPTIVIA TRANSPORTS",
             "21 Allée Jean Jaurès 31000 Toulouse",
@@ -150,13 +223,28 @@ def generate_excel_grid(dept_depart, base_km, base_fixe):
             "SIRET: 880 457 437 00023"
         ]
 
+        # Pré-calcul des distances pour ne pas le refaire 3 fois (1 fois pour les 3 onglets)
+        DISTANCES_CACHE = {}
+        
+        status_text.text("🚀 Interrogation du satellite de routage...")
+        
+        for dept_dest in FULL_GEO_DATA.keys():
+            code_dep_dest = dept_dest.split(" - ")[0]
+            # Appel API ou Maths
+            dist = get_route_distance(code_dep_start, code_dep_dest)
+            DISTANCES_CACHE[dept_dest] = dist
+            
+            # Mise à jour barre
+            current_step += 1
+            progress_bar.progress(current_step / total_steps)
+            
+        status_text.text("✅ Distances calculées. Génération du fichier...")
+
         def create_sheet(sheet_name, max_pal, pal_type_label):
             ws = workbook.add_worksheet(sheet_name)
             
-            # GESTION DU LOGO
             logo_path = "logo.png"
             logo_inserted = False
-            
             if os.path.exists(logo_path):
                 try:
                     ws.insert_image('A1', logo_path, {'x_scale': 0.15, 'y_scale': 0.15, 'x_offset': 10, 'y_offset': 10})
@@ -169,7 +257,6 @@ def generate_excel_grid(dept_depart, base_km, base_fixe):
 
             text_row = 0 if not logo_inserted else 0
             text_col = 2 if logo_inserted else 0
-            
             for i, line in enumerate(company_info):
                 ws.write(text_row + i, text_col, line, fmt_title if i==0 else fmt_info)
             
@@ -182,14 +269,15 @@ def generate_excel_grid(dept_depart, base_km, base_fixe):
             
             row = row_header + 1
             for dept_dest in FULL_GEO_DATA.keys():
+                dist_val = DISTANCES_CACHE.get(dept_dest, 0)
                 flux = get_flux_coef(dept_depart, dept_dest)
+                
                 ws.write(row, 0, dept_dest)
-                ws.write(row, 1, 0, fmt_km)
+                ws.write(row, 1, dist_val, fmt_km) # Distance API
                 
                 for i in range(1, max_pal + 1):
                     col_idx = i + 1
                     
-                    # --- LOGIQUE COEFF CORRIGÉE V15 ---
                     if max_pal == 33: # 80x120
                         ratio = i / 33
                         if i == 1: factor = 0.40
@@ -202,11 +290,10 @@ def generate_excel_grid(dept_depart, base_km, base_fixe):
                         elif i <= 4: factor = 0.45
                         elif i <= 12: factor = 0.75
                         else: factor = 0.90
-                    elif max_pal == 24: # 120x120 (CORRECTION ICI)
+                    elif max_pal == 24: # 120x120
                         ratio = i / 24
-                        # On durcit le coefficient pour que 120x120 soit plus cher dès la 1ère palette
-                        if i == 1: factor = 0.37 # Au lieu de 0.45 (Courbe plus bombée = plus cher)
-                        elif i <= 4: factor = 0.42 # Au lieu de 0.50
+                        if i == 1: factor = 0.37
+                        elif i <= 4: factor = 0.42
                         elif i <= 12: factor = 0.80
                         else: factor = 0.95
                     
@@ -225,7 +312,9 @@ def generate_excel_grid(dept_depart, base_km, base_fixe):
         create_sheet("EURO 80x120", 33, "Europe 80x120 (Base 33)")
         create_sheet("ISO 100x120", 26, "Industrie 100x120 (Base 26)")
         create_sheet("CHEP 120x120", 24, "Grand Format 120x120 (Base 24)")
-            
+        
+    status_text.empty()
+    progress_bar.empty()
     return output.getvalue()
 
 
@@ -256,8 +345,16 @@ if mode == "Calculateur Rapide":
     c_dist, c_info = st.columns([1, 2])
 
     with c_dist:
+        # Calcul auto via API ou Maths
+        code_s = dept_start.split(" - ")[0]
+        code_e = dept_end.split(" - ")[0]
+        # On utilise la fonction qui essaie l'API
+        auto_dist = get_route_distance(code_s, code_e)
+        
         st.markdown("👇 **SAISIR LES KM ICI**")
-        dist_reelle = st.number_input("Distance Réelle (km)", min_value=0, value=0)
+        dist_reelle = st.number_input("Distance Réelle (km)", min_value=0, value=auto_dist)
+        if auto_dist > 0:
+            st.caption(f"Estimation auto : {auto_dist} km")
 
     flux_coef = get_flux_coef(dept_start, dept_end)
     flux_label = "➡️ Flux Standard"
@@ -314,12 +411,6 @@ if mode == "Calculateur Rapide":
         base_price = (dist_reelle * base_km_sell) + fixed_sell
         base_price_geo = base_price * flux_coef 
         
-        # --- APPLIQUER LA CORRECTION AUSSI SUR LE MODE CALCULATEUR ---
-        # Si c'est 120x120 dans le calculateur, on corrige aussi le facteur manuellement ici pour cohérence
-        # Le code actuel ne gère pas 120x120 en bouton radio spécifique, il est dans "Mètres" ou implicite.
-        # Pour faire simple : Si on choisissait 120x120, le facteur serait ajusté.
-        # Ici on garde la logique existante.
-        
         final_base = base_price_geo * (ratio ** power_factor)
         if final_base < 120: final_base = 120
         if opt_montagne: final_base = final_base * 1.25
@@ -364,13 +455,14 @@ else:
     with col_sel:
         dept_export = st.selectbox("CHOISIR LE DÉPARTEMENT DE DÉPART", list(FULL_GEO_DATA.keys()), index=10) # 11 par défaut
     
-    st.info("💡 **Instructions :** Cliquez sur télécharger. Ouvrez le fichier Excel. Remplissez simplement la colonne jaune 'Distance' pour voir tous les prix s'afficher.")
+    st.info("⚠️ **Patience :** Le calcul des distances réelles pour 95 départements prend environ 15 secondes.")
     
-    excel_data = generate_excel_grid(dept_export, base_km_sell, fixed_sell)
-    
-    with col_btn:
-        st.write("") 
-        st.write("") 
+    # On appelle la fonction de génération
+    # Note : Le bouton relance le script, donc le calcul se fait à ce moment là
+    if st.button("LANCER LE CALCUL ET PRÉPARER LE FICHIER"):
+        excel_data = generate_excel_grid(dept_export, base_km_sell, fixed_sell)
+        
+        st.success("✅ Fichier prêt !")
         st.download_button(
             label=f"📥 TÉLÉCHARGER LA GRILLE ({dept_export})",
             data=excel_data,
