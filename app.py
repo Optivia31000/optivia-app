@@ -3,62 +3,134 @@ import streamlit as st
 # --- CONFIGURATION ---
 st.set_page_config(page_title="OPTIVIA DEAL MAKER", page_icon="🎯", layout="wide")
 
-# --- STYLE VISUEL ---
+# --- STYLE VISUEL (Code couleur Optivia) ---
 st.markdown("""
     <style>
     .client-price { font-size: 32px !important; font-weight: bold; color: #1E3A8A; } 
     .buy-limit { font-size: 32px !important; font-weight: bold; color: #DC2626; } 
     .kpi-card { background-color: #F3F4F6; padding: 15px; border-radius: 10px; border-left: 5px solid #1E3A8A; margin-bottom: 10px;}
-    .zone-info { color: #854d0e; background-color: #fef9c3; padding: 10px; border-radius: 5px; font-weight: bold;}
+    .zone-info { color: #854d0e; background-color: #fef9c3; padding: 10px; border-radius: 5px; font-weight: bold; margin-bottom: 10px;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- BASE DE DONNÉES GÉOGRAPHIQUE (EXTRAIT TARIFRET) ---
-# C'est ici qu'on définit les points précis dans chaque département
-GEO_DATA = {
-    "31 - Haute Garonne": {
-        "Toulouse / Eurocentre (Standard)": {"km_delta": 0, "montagne": False},
-        "Fronton (Nord - Accès A62)": {"km_delta": -15, "montagne": False},
-        "St Gaudens (Sud - A64)": {"km_delta": 90, "montagne": False},
-        "Bagnères de Luchon (Montagne)": {"km_delta": 140, "montagne": True, "acces_diff": True},
-        "Revel / Villefranche (Est)": {"km_delta": 30, "montagne": False}
-    },
-    "09 - Ariège": {
-        "Pamiers / Foix (Vallée)": {"km_delta": 0, "montagne": False},
-        "Ax-les-Thermes / Andorre (Montagne)": {"km_delta": 40, "montagne": True},
-        "St Girons (Couserans)": {"km_delta": 30, "montagne": True}
-    },
-    "65 - Hautes Pyrénées": {
-        "Tarbes / Lourdes (Plaine)": {"km_delta": 0, "montagne": False},
-        "Argelès / Cauterets (Montagne)": {"km_delta": 30, "montagne": True},
-        "Lannemezan (Plateau)": {"km_delta": 35, "montagne": False}
-    },
-    "59 - Nord": {
-        "Lille / Lesquin (Standard)": {"km_delta": 0, "montagne": False},
-        "Dunkerque (Port)": {"km_delta": 80, "montagne": False},
-        "Valenciennes": {"km_delta": 50, "montagne": False}
-    },
-    "75 - Paris (IdF)": {
-        "Paris / Petite Couronne (Standard)": {"km_delta": 0, "montagne": False},
-        "Grande Couronne (77/78/91/95)": {"km_delta": 40, "montagne": False}
-    },
-    "Autre Département": {
-        "Chef-lieu / Préfecture": {"km_delta": 0, "montagne": False},
-        "Zone Montagne / Difficile": {"km_delta": 40, "montagne": True}
-    }
+# --- BASE DE DONNÉES GÉOGRAPHIQUE (EXTRAITE DE TARIFRET KM.CSV) ---
+# J'ai nettoyé les "Montagne" pour les gérer via la case à cocher.
+FULL_GEO_DATA = {
+    "01 - Ain": ["Belley", "Bourg-en-Bresse", "Gex", "Nantua"],
+    "02 - Aisne": ["Château-Thierry", "Laon", "Saint-Quentin", "Soissons", "Vervins"],
+    "03 - Allier": ["Montluçon", "Vichy", "Yseure"],
+    "04 - Alpes-Htes-Prov.": ["Barcelonnette", "Castellane", "Digne-les-Bains", "Forcalquier"],
+    "05 - Hautes-Alpes": ["Briançon", "Gap"],
+    "06 - Alpes-Maritimes": ["Grasse", "Nice"],
+    "07 - Ardèche": ["Largentière", "Privas", "Tournon-sur-Rhône"],
+    "08 - Ardennes": ["Charleville-Mézières", "Rethel", "Sedan", "Vouziers"],
+    "09 - Ariège": ["Foix", "Pamiers", "Saint-Girons"],
+    "10 - Aube": ["Bar-sur-Aube", "Nogent-sur-Seine", "Troyes"],
+    "11 - Aude": ["Carcassonne", "Limoux", "Narbonne"],
+    "12 - Aveyron": ["Millau", "Rodez", "Villefranche-de-Rouergue"],
+    "13 - Bouches-du-Rhône": ["Aix-en-Provence", "Arles", "Istres", "Marseille"],
+    "14 - Calvados": ["Bayeux", "Caen", "Lisieux", "Vire"],
+    "15 - Cantal": ["Aurillac", "Mauriac", "Saint-Flour"],
+    "16 - Charente": ["Angoulême", "Cognac", "Confolens"],
+    "17 - Charente-Maritime": ["Jonzac", "La Rochelle", "Rochefort", "Saintes", "Saint-Jean-d'Angély"],
+    "18 - Cher": ["Bourges", "Saint-Amand-Montrond", "Vierzon"],
+    "19 - Corrèze": ["Brive-la-Gaillarde", "Tulle", "Ussel"],
+    "20 - Corse": ["Ajaccio", "Bastia", "Calvi", "Corte", "Sartène"],
+    "21 - Côte-d'Or": ["Beaune", "Dijon", "Montbard"],
+    "22 - Côtes-d'Armor": ["Dinan", "Guingamp", "Lannion", "Saint-Brieuc"],
+    "23 - Creuse": ["Aubusson", "Guéret"],
+    "24 - Dordogne": ["Bergerac", "Nontron", "Périgueux", "Sarlat-la-Canéda"],
+    "25 - Doubs": ["Besançon", "Montbéliard", "Pontarlier"],
+    "26 - Drôme": ["Die", "Nyons", "Valence"],
+    "27 - Eure": ["Bernay", "Évreux", "Les Andelys"],
+    "28 - Eure-et-Loir": ["Chartres", "Châteaudun", "Dreux", "Nogent-le-Rotrou"],
+    "29 - Finistère": ["Brest", "Châteaulin", "Morlaix", "Quimper"],
+    "30 - Gard": ["Alès", "Le Vigan", "Nîmes"],
+    "31 - Haute-Garonne": ["Muret", "Saint-Gaudens", "Toulouse", "Eurocentre", "Fronton"],
+    "32 - Gers": ["Auch", "Condom", "Mirande"],
+    "33 - Gironde": ["Arcachon", "Blaye", "Bordeaux", "Langon", "Lesparre-Médoc", "Libourne"],
+    "34 - Hérault": ["Béziers", "Lodève", "Montpellier"],
+    "35 - Ille-et-Vilaine": ["Fougères", "Redon", "Rennes", "Saint-Malo"],
+    "36 - Indre": ["Châteauroux", "Issoudun", "La Châtre", "Le Blanc"],
+    "37 - Indre-et-Loire": ["Chinon", "Loches", "Tours"],
+    "38 - Isère": ["Grenoble", "La Tour-du-Pin", "Vienne"],
+    "39 - Jura": ["Dole", "Lons-le-Saunier", "Saint-Claude"],
+    "40 - Landes": ["Dax", "Mont-de-Marsan"],
+    "41 - Loir-et-Cher": ["Blois", "Romorantin-Lanthenay", "Vendôme"],
+    "42 - Loire": ["Montbrison", "Roanne", "Saint-Étienne"],
+    "43 - Haute-Loire": ["Brioude", "Le Puy-en-Velay", "Yssingeaux"],
+    "44 - Loire-Atlantique": ["Ancenis", "Châteaubriant", "Nantes", "Saint-Nazaire"],
+    "45 - Loiret": ["Montargis", "Orléans", "Pithiviers"],
+    "46 - Lot": ["Cahors", "Figeac", "Gourdon"],
+    "47 - Lot-et-Garonne": ["Agen", "Marmande", "Nérac", "Villeneuve-sur-Lot"],
+    "48 - Lozère": ["Florac", "Mende"],
+    "49 - Maine-et-Loire": ["Angers", "Cholet", "Saumur", "Segré"],
+    "50 - Manche": ["Avranches", "Cherbourg-Octeville", "Coutances", "Saint-Lô"],
+    "51 - Marne": ["Châlons-en-Champagne", "Épernay", "Reims", "Sainte-Menehould", "Vitry-le-François"],
+    "52 - Haute-Marne": ["Chaumont", "Langres", "Saint-Dizier"],
+    "53 - Mayenne": ["Château-Gontier", "Laval", "Mayenne"],
+    "54 - Meurthe-et-Moselle": ["Briey", "Lunéville", "Nancy", "Toul"],
+    "55 - Meuse": ["Bar-le-Duc", "Commercy", "Verdun"],
+    "56 - Morbihan": ["Lorient", "Pontivy", "Vannes"],
+    "57 - Moselle": ["Boulay-Moselle", "Château-Salins", "Forbach", "Metz", "Sarrebourg", "Sarreguemines", "Thionville"],
+    "58 - Nièvre": ["Château-Chinon", "Clamecy", "Cosne-Cours-sur-Loire", "Nevers"],
+    "59 - Nord": ["Avesnes-sur-Helpe", "Cambrai", "Douai", "Dunkerque", "Lille", "Valenciennes"],
+    "60 - Oise": ["Beauvais", "Clermont", "Compiègne", "Senlis"],
+    "61 - Orne": ["Alençon", "Argentan", "Mortagne-au-Perche"],
+    "62 - Pas-de-Calais": ["Arras", "Béthune", "Boulogne-sur-Mer", "Calais", "Lens", "Montreuil", "Saint-Omer"],
+    "63 - Puy-de-Dôme": ["Ambert", "Clermont-Ferrand", "Issoire", "Riom", "Thiers"],
+    "64 - Pyr.-Atlantiques": ["Bayonne", "Oloron-Sainte-Marie", "Pau"],
+    "65 - Hautes-Pyrénées": ["Argelès-Gazost", "Bagnères-de-Bigorre", "Tarbes"],
+    "66 - Pyr.-Orientales": ["Céret", "Perpignan", "Prades"],
+    "67 - Bas-Rhin": ["Haguenau", "Molsheim", "Saverne", "Sélestat", "Strasbourg", "Wissembourg"],
+    "68 - Haut-Rhin": ["Altkirch", "Colmar", "Guebwiller", "Mulhouse", "Ribeauvillé", "Thann"],
+    "69 - Rhône": ["Lyon", "Villefranche-sur-Saône"],
+    "70 - Haute-Saône": ["Lure", "Vesoul"],
+    "71 - Saône-et-Loire": ["Autun", "Chalon-sur-Saône", "Charolles", "Louhans", "Mâcon"],
+    "72 - Sarthe": ["La Flèche", "Le Mans", "Mamers"],
+    "73 - Savoie": ["Albertville", "Chambéry", "Saint-Jean-de-Maurienne"],
+    "74 - Haute-Savoie": ["Annecy", "Bonneville", "Saint-Julien-en-Genevois", "Thonon-les-Bains"],
+    "75 - Paris": ["Paris Intramuros"],
+    "76 - Seine-Maritime": ["Dieppe", "Le Havre", "Rouen"],
+    "77 - Seine-et-Marne": ["Fontainebleau", "Meaux", "Melun", "Provins", "Torcy"],
+    "78 - Yvelines": ["Mantes-la-Jolie", "Rambouillet", "Saint-Germain-en-Laye", "Versailles"],
+    "79 - Deux-Sèvres": ["Bressuire", "Niort", "Parthenay"],
+    "80 - Somme": ["Abbeville", "Amiens", "Montdidier", "Péronne"],
+    "81 - Tarn": ["Albi", "Castres"],
+    "82 - Tarn-et-Garonne": ["Castelsarrasin", "Montauban"],
+    "83 - Var": ["Brignoles", "Draguignan", "Toulon"],
+    "84 - Vaucluse": ["Apt", "Avignon", "Carpentras"],
+    "85 - Vendée": ["Fontenay-le-Comte", "La Roche-sur-Yon", "Les Sables-d'Olonne"],
+    "86 - Vienne": ["Châtellerault", "Montmorillon", "Poitiers"],
+    "87 - Haute-Vienne": ["Bellac", "Limoges", "Rochechouart"],
+    "88 - Vosges": ["Épinal", "Neufchâteau", "Saint-Dié-des-Vosges"],
+    "89 - Yonne": ["Auxerre", "Avallon", "Sens"],
+    "90 - Terr. de Belfort": ["Belfort"],
+    "91 - Essonne": ["Étampes", "Évry", "Palaiseau"],
+    "92 - Hauts-de-Seine": ["Antony", "Boulogne-Billancourt", "Nanterre"],
+    "93 - Seine-Saint-Denis": ["Bobigny", "Le Raincy", "Saint-Denis"],
+    "94 - Val-de-Marne": ["Créteil", "L'Haÿ-les-Roses", "Nogent-sur-Marne"],
+    "95 - Val-d'Oise": ["Argenteuil", "Pontoise", "Sarcelles"],
+    "98 - Monaco": ["Monaco"]
 }
 
-# Fonction pour calculer le coefficient de marché (Flux Nord/Sud)
-ZONES_FORTES = ["59 - Nord", "62 - Pas de Calais", "75 - Paris (IdF)", "69 - Rhône", "67 - Bas Rhin"]
-def get_flux_coef(dep_name_start, dep_name_end):
+# --- FONCTION FLUX (Zones Fortes vs Faibles) ---
+# Liste des départements "Zones Fortes" (Export)
+ZONES_FORTES = ["59", "62", "75", "92", "93", "94", "69", "67", "68", "44", "35", "31"]
+
+def get_flux_coef(dep_full_name_start, dep_full_name_end):
+    code_start = dep_full_name_start.split(" - ")[0]
+    code_end = dep_full_name_end.split(" - ")[0]
+    
     coef = 1.0
-    # Départ Zone Forte vers Province (Cher)
-    if dep_name_start in ZONES_FORTES and dep_name_end not in ZONES_FORTES:
-        coef = 1.05 
-    # Retour vers Zone Forte (Moins cher)
-    elif dep_name_start not in ZONES_FORTES and dep_name_end in ZONES_FORTES:
-        coef = 0.92 
-    return coef
+    # 1. Départ Zone Forte vers Province (Prix Fort)
+    if code_start in ZONES_FORTES and code_end not in ZONES_FORTES:
+        coef = 1.05 # +5%
+    # 2. Retour Province vers Zone Forte (Prix Faible)
+    elif code_start not in ZONES_FORTES and code_end in ZONES_FORTES:
+        coef = 0.92 # -8%
+        
+    return coef, code_start, code_end
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -71,61 +143,44 @@ with st.sidebar:
 # --- TITRE ---
 st.title("🎯 OPTIVIA DEAL MAKER")
 
-# --- BLOC 1 : LE TRAJET DE PRÉCISION ---
+# --- BLOC 1 : LE TRAJET ---
 st.subheader("📍 Origine & Destination")
 
-# --- LIGNE DÉPART ---
 c1, c2 = st.columns([1, 1])
 with c1:
-    dept_start = st.selectbox("Département Départ", list(GEO_DATA.keys()), index=0)
+    dept_start = st.selectbox("DÉPART", list(FULL_GEO_DATA.keys()), index=30) # Default 31
+    city_start = st.selectbox("Ville Départ", FULL_GEO_DATA[dept_start])
+
 with c2:
-    # Le menu déroulant des villes s'adapte au département choisi
-    city_start = st.selectbox("Ville / Zone de Départ", list(GEO_DATA[dept_start].keys()))
-
-# Récupération des données précises du point de départ
-data_start = GEO_DATA[dept_start][city_start]
-
-# --- LIGNE ARRIVÉE ---
-c3, c4 = st.columns([1, 1])
-with c3:
-    dept_end = st.selectbox("Département Arrivée", list(GEO_DATA.keys()), index=4) # Par défaut Paris
-with c4:
-    city_end = st.selectbox("Ville / Zone d'Arrivée", list(GEO_DATA[dept_end].keys()))
-
-data_end = GEO_DATA[dept_end][city_end]
+    dept_end = st.selectbox("ARRIVÉE", list(FULL_GEO_DATA.keys()), index=74) # Default 75
+    city_end = st.selectbox("Ville Arrivée", FULL_GEO_DATA[dept_end])
 
 # --- DISTANCE & FLUX ---
 st.markdown("---")
 c_dist, c_info = st.columns([1, 2])
 with c_dist:
-    dist_ref = st.number_input("Distance de Réf (Préfecture à Préfecture)", min_value=1, value=700)
+    dist_reelle = st.number_input("Distance Réelle (km)", min_value=1, value=700)
 
-# CALCUL DES CORRECTIONS GÉOGRAPHIQUES
-# 1. Ajustement Distance (Si on part de Luchon, c'est + loin que Toulouse)
-dist_reelle = dist_ref + data_start['km_delta'] + data_end['km_delta']
+# Calcul Flux
+flux_coef, code_s, code_e = get_flux_coef(dept_start, dept_end)
+flux_label = ""
+flux_color = "blue"
 
-# 2. Surcharge Montagne / Accès
-montagne_surcharge = 1.0
-msg_zone = []
-
-if data_start['montagne']:
-    montagne_surcharge += 0.15 # +15% si départ montagne
-    msg_zone.append(f"🏔️ Départ Montagne (+15%)")
-if data_end['montagne']:
-    montagne_surcharge += 0.15 # +15% si arrivée montagne
-    msg_zone.append(f"🏔️ Arrivée Montagne (+15%)")
-
-# 3. Coefficient de Flux (Nord/Sud)
-flux_coef = get_flux_coef(dept_start, dept_end)
-if flux_coef > 1: msg_zone.append("📈 Départ Zone Forte")
-if flux_coef < 1: msg_zone.append("📉 Flux Retour")
+if flux_coef > 1: 
+    flux_label = "📈 Départ Zone Forte (+5%)"
+    flux_color = "red"
+elif flux_coef < 1: 
+    flux_label = "📉 Flux Retour (-8%)"
+    flux_color = "green"
+else: 
+    flux_label = "➡️ Flux Standard"
 
 with c_info:
-    st.markdown(f"**Distance Corrigée :** {dist_ref} km ➔ **{dist_reelle} km**")
-    if msg_zone:
-        st.markdown(f"<div class='zone-info'>{'  |  '.join(msg_zone)}</div>", unsafe_allow_html=True)
+    # Affichage intelligent du flux
+    if flux_coef != 1.0:
+        st.markdown(f"<div class='zone-info' style='color:{flux_color}'>{flux_label}</div>", unsafe_allow_html=True)
     else:
-        st.success("✅ Trajet Standard")
+        st.info(f"Flux : {flux_label}")
 
 # --- BLOC 2 : MARCHANDISE ---
 st.subheader("📦 La Marchandise")
@@ -158,25 +213,39 @@ with c_qty:
         cle_tarif = "Complet"
 
 # --- OPTIONS ---
-c_opt1, c_opt2, c_opt3, c_opt4 = st.columns(4)
-with c_opt1: opt_hayon = st.checkbox("Hayon (+50€)")
-with c_opt2: opt_stop = st.checkbox("Stop Sup (+50€)")
-with c_opt3: opt_adr = st.checkbox("ADR (+20%)")
-with c_opt4: opt_frais = st.checkbox("Frais (+15€)", value=True)
+st.subheader("🔧 Options & Forfaits")
+c_opt1, c_opt2, c_opt3 = st.columns(3)
+
+with c_opt1: 
+    opt_hayon = st.checkbox("Hayon (+50€)")
+    opt_stop = st.checkbox("Stop Sup (+50€)")
+with c_opt2: 
+    opt_adr = st.checkbox("ADR (+20%)")
+    opt_frais = st.checkbox("Frais Dossier (+15€)", value=True)
+with c_opt3:
+    # LA GESTION "MONTAGNE / DIFFICILE"
+    st.markdown("**Accès Difficile / Montagne**")
+    opt_montagne = st.checkbox("Activer Majoration (+25%)")
+    if opt_montagne:
+        st.caption("Applique +25% sur le transport (Ex: Luchon, Corse, Stations...)")
 
 # --- MOTEUR DE CALCUL FINAL ---
-# 1. Base km sur distance corrigée
+# 1. Base km
 base_price = (dist_reelle * base_km_sell) + fixed_sell
 
-# 2. Application Coef Flux (Nord/Sud) ET Coef Montagne (Luchon)
-base_price_geo = base_price * flux_coef * montagne_surcharge
+# 2. Application Coef Flux (Nord/Sud)
+base_price_geo = base_price * flux_coef 
 
-# 3. Application Partiel
+# 3. Application Partiel (Courbe Tarifret)
 final_base = base_price_geo * (ratio ** power_factor)
 
 if final_base < 120: final_base = 120
 
-# 4. Options
+# 4. Majoration Montagne (S'applique sur le transport pur)
+if opt_montagne:
+    final_base = final_base * 1.25
+
+# 5. Options forfaitaires
 options_val = 0
 if opt_hayon: options_val += 50
 if opt_stop: options_val += 50
@@ -197,7 +266,12 @@ with r1:
     st.markdown('<div class="kpi-card">', unsafe_allow_html=True)
     st.markdown("### 💰 PRIX CLIENT")
     st.markdown(f'<p class="client-price">{FINAL_SELL:.0f} € HT</p>', unsafe_allow_html=True)
-    st.caption(f"Détail : {cle_tarif} | {dist_reelle}km (Réel)")
+    
+    details_txt = f"Clé: {cle_tarif}"
+    if flux_coef != 1: details_txt += f" | {flux_label}"
+    if opt_montagne: details_txt += " | 🏔️ Montagne"
+    
+    st.caption(details_txt)
     st.markdown('</div>', unsafe_allow_html=True)
 
 with r2:
