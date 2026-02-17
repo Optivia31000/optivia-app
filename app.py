@@ -29,8 +29,10 @@ col1, col2 = st.columns(2)
 with col1:
     distance = st.number_input("📍 Distance (km)", min_value=1, value=450)
 with col2:
-    # Choix de l'unité
-    unit_type = st.radio("Unité de chargement", ["Palettes (80x120)", "Mètres de plancher", "Camion Complet"], horizontal=True)
+    # Choix de l'unité avec ajout de la 100x120
+    unit_type = st.radio("Unité de chargement", 
+                         ["Palettes (80x120)", "Palettes (100x120)", "Mètres de plancher", "Camion Complet"], 
+                         horizontal=True)
 
 # --- BLOC 2 : QUANTITÉ & OPTIONS ---
 col3, col4 = st.columns(2)
@@ -41,20 +43,39 @@ with col3:
     ratio = 1.0
     cle_tarif = "Standard"
     
-    # Logique de calcul automatique (Cerveau Tarifret)
+    # --- LOGIQUE CERVEAU TARIFRET ---
+    
+    # CAS 1 : Palette EURO (80x120) - Base 33/camion
     if unit_type == "Palettes (80x120)":
-        qty = st.number_input("Nombre de Palettes", 1, 33, 3)
+        qty = st.number_input("Nombre de Palettes (80x120)", 1, 33, 3)
         ratio = qty / 33
         if qty <= 5: 
-            power_factor = 0.55 # Courbe P60 (Prix fort petit lot)
+            power_factor = 0.55 # P60 (Petit lot cher)
             cle_tarif = "P60 (Petit Lot)"
         elif qty <= 15:
-            power_factor = 0.75 # Courbe P39
+            power_factor = 0.75 # P39
             cle_tarif = "P39 (Lot Moyen)"
         else:
-            power_factor = 0.90 # Courbe P26
+            power_factor = 0.90 # P26
+            cle_tarif = "P26 (Gros Lot)"
+
+    # CAS 2 : Palette ISO/INDUSTRIE (100x120) - Base 26/camion
+    elif unit_type == "Palettes (100x120)":
+        qty = st.number_input("Nombre de Palettes (100x120)", 1, 26, 3)
+        ratio = qty / 26 # Un complet c'est 26 palettes de ce type
+        
+        # Les seuils sont ajustés car la palette est plus grosse
+        if qty <= 4: # Équivalent ~5 pal Euro
+            power_factor = 0.55 
+            cle_tarif = "P60 (Petit Lot)"
+        elif qty <= 12:
+            power_factor = 0.75 
+            cle_tarif = "P39 (Lot Moyen)"
+        else:
+            power_factor = 0.90 
             cle_tarif = "P26 (Gros Lot)"
             
+    # CAS 3 : Mètre de plancher
     elif unit_type == "Mètres de plancher":
         metres = st.number_input("Mètres de Plancher", 0.0, 13.6, 2.0)
         ratio = metres / 13.6
@@ -64,7 +85,9 @@ with col3:
         else:
             power_factor = 0.85
             cle_tarif = "Standard"
-    else: # Complet
+            
+    # CAS 4 : Complet
+    else: 
         ratio = 1.0
         power_factor = 1.0
         cle_tarif = "Complet"
