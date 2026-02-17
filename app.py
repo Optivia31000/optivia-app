@@ -4,6 +4,7 @@ import io
 import os
 import math
 import requests
+import xlsxwriter # Important pour la conversion d'adresse de cellule
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="CALCULATEUR OPTIVIA", page_icon="🚛", layout="wide")
@@ -18,7 +19,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- BASE DE DONNÉES GPS (Lat, Lon) ---
+# --- BASE DE DONNÉES GPS ---
 DEPT_GPS = {
     "01": (46.2052, 5.2255), "02": (49.5641, 3.6199), "03": (46.5681, 3.3344), "04": (44.0922, 6.2369),
     "05": (44.5632, 6.0796), "06": (43.7102, 7.2620), "07": (44.7333, 4.5955), "08": (49.7738, 4.7198),
@@ -179,7 +180,7 @@ def get_flux_coef(dep_full_name_start, dep_full_name_end):
     elif code_start not in ZONES_FORTES and code_end in ZONES_FORTES: coef = 0.92 
     return coef
 
-# --- GÉNÉRATEUR EXCEL (AVEC PLANCHER RÉGIONAL) ---
+# --- GÉNÉRATEUR EXCEL (AVEC ANTI-CHUTE) ---
 def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
     output = io.BytesIO()
     code_dep_start = dept_depart.split(" - ")[0]
@@ -276,19 +277,25 @@ def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
                         elif i <= 12: factor = 0.80
                         else: factor = 0.95
                     
-                    # --- NOUVELLE LOGIQUE PLANCHER REGIONAL ---
-                    # 1. Calcul Prix Théorique du Complet pour cette ligne
+                    # Logique de prix
                     price_full_theo = f"(($B{row+1}*{base_km}+{base_fixe})*{flux})"
-                    
-                    # 2. Application du Plancher Régional sur le Complet
-                    # Le complet vaut soit le calcul km, soit le plancher (ex: 320€)
                     price_full_floored = f"MAX({price_full_theo}, {min_regional})"
-                    
-                    # 3. Application de la courbe Partiel sur ce socle solide
                     curve = f"POWER({ratio},{factor})"
                     
-                    # 4. Formule Finale (avec le petit plancher unitaire 120€)
-                    formula = f"=IF($B{row+1}>0, MAX(120, {price_full_floored} * {curve}), 0)"
+                    # --- LE CLIQUET ANTI-RETOUR ---
+                    # Le prix de la palette (i) ne doit jamais être inférieur à la palette (i-1)
+                    # Sauf pour la palette 1 qui n'a pas de précédent
+                    
+                    calc_current = f"{price_full_floored} * {curve}"
+                    
+                    if i == 1:
+                        # Pas de précédent
+                        formula = f"=IF($B{row+1}>0, MAX(120, {calc_current}), 0)"
+                    else:
+                        # On compare avec la cellule de gauche (i-1)
+                        # xlsxwriter permet de référencer des cellules
+                        prev_cell = xlsxwriter.utility.xl_rowcol_to_cell(row, col_idx - 1)
+                        formula = f"=IF($B{row+1}>0, MAX(120, {calc_current}, {prev_cell}), 0)"
                     
                     style = fmt_bold_price if i == max_pal else fmt_currency
                     ws.write_formula(row, col_idx, formula, style)
@@ -399,9 +406,7 @@ if mode == "Calculateur Rapide":
         base_price = (dist_reelle * base_km_sell) + fixed_sell
         base_price_geo = base_price * flux_coef 
         
-        # --- APPLICATION PLANCHER REGIONAL (Mode Calculateur) ---
         if base_price_geo < min_regional:
-            # On affiche une petite info pour dire que le plancher a été touché
             st.toast(f"ℹ️ Distance courte : Application du plancher complet à {min_regional}€")
             base_price_geo = min_regional
 
