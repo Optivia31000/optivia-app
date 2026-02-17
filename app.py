@@ -1,9 +1,9 @@
 import streamlit as st
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="OPTIVIA DEAL MAKER", page_icon="🎯", layout="wide")
+st.set_page_config(page_title="CALCULATEUR OPTIVIA", page_icon="🚛", layout="wide")
 
-# --- STYLE VISUEL (Code couleur Optivia) ---
+# --- STYLE VISUEL ---
 st.markdown("""
     <style>
     .client-price { font-size: 32px !important; font-weight: bold; color: #1E3A8A; } 
@@ -13,8 +13,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- BASE DE DONNÉES GÉOGRAPHIQUE (EXTRAITE DE TARIFRET KM.CSV) ---
-# J'ai nettoyé les "Montagne" pour les gérer via la case à cocher.
+# --- BASE DE DONNÉES GÉOGRAPHIQUE (NETTOYÉE ET FORMATÉE 01-95) ---
 FULL_GEO_DATA = {
     "01 - Ain": ["Belley", "Bourg-en-Bresse", "Gex", "Nantua"],
     "02 - Aisne": ["Château-Thierry", "Laon", "Saint-Quentin", "Soissons", "Vervins"],
@@ -141,7 +140,7 @@ with st.sidebar:
     target_margin = st.slider("Objectif Marge (%)", 15, 40, 25)
 
 # --- TITRE ---
-st.title("🎯 OPTIVIA DEAL MAKER")
+st.title("🚛 CALCULATEUR OPTIVIA")
 
 # --- BLOC 1 : LE TRAJET ---
 st.subheader("📍 Origine & Destination")
