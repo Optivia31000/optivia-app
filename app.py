@@ -4,7 +4,7 @@ import io
 import os
 import math
 import requests
-import xlsxwriter # Important pour la conversion d'adresse de cellule
+import xlsxwriter 
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="CALCULATEUR OPTIVIA", page_icon="🚛", layout="wide")
@@ -180,7 +180,7 @@ def get_flux_coef(dep_full_name_start, dep_full_name_end):
     elif code_start not in ZONES_FORTES and code_end in ZONES_FORTES: coef = 0.92 
     return coef
 
-# --- GÉNÉRATEUR EXCEL (AVEC ANTI-CHUTE) ---
+# --- GÉNÉRATEUR EXCEL (OPTIMISÉ V20) ---
 def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
     output = io.BytesIO()
     code_dep_start = dept_depart.split(" - ")[0]
@@ -222,6 +222,16 @@ def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
         def create_sheet(sheet_name, max_pal, pal_type_label):
             ws = workbook.add_worksheet(sheet_name)
             
+            # --- PARAMÉTRAGE DES FACTEURS LISSÉS ---
+            # Pour éviter les trous, on lisse les facteurs sur les 10 premières palettes
+            # Au lieu de sauter de 0.40 à 0.75, on progresse doucement
+            
+            # Dictionnaire de facteurs spécifiques (Progression type "Messagerie")
+            FACTORS_80 = {
+                1: 0.38, 2: 0.42, 3: 0.48, 4: 0.52, 5: 0.58, 
+                6: 0.65, 7: 0.70, 8: 0.75, 9: 0.78, 10: 0.80
+            }
+            
             logo_path = "logo.png"
             logo_inserted = False
             if os.path.exists(logo_path):
@@ -260,42 +270,41 @@ def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
                     
                     if max_pal == 33: # 80x120
                         ratio = i / 33
-                        if i == 1: factor = 0.40
-                        elif i <= 5: factor = 0.45
-                        elif i <= 15: factor = 0.75
-                        else: factor = 0.90
+                        # Utilisation des facteurs lissés ou standard
+                        if i in FACTORS_80:
+                            factor = FACTORS_80[i]
+                        elif i <= 15: factor = 0.85
+                        else: factor = 0.92
+                        
                     elif max_pal == 26: # 100x120
                         ratio = i / 26
-                        if i == 1: factor = 0.40
+                        if i == 1: factor = 0.38
                         elif i <= 4: factor = 0.45
-                        elif i <= 12: factor = 0.75
+                        elif i <= 10: factor = 0.70
                         else: factor = 0.90
+                        
                     elif max_pal == 24: # 120x120
                         ratio = i / 24
                         if i == 1: factor = 0.37
                         elif i <= 4: factor = 0.42
-                        elif i <= 12: factor = 0.80
+                        elif i <= 10: factor = 0.75
                         else: factor = 0.95
                     
-                    # Logique de prix
                     price_full_theo = f"(($B{row+1}*{base_km}+{base_fixe})*{flux})"
                     price_full_floored = f"MAX({price_full_theo}, {min_regional})"
                     curve = f"POWER({ratio},{factor})"
                     
-                    # --- LE CLIQUET ANTI-RETOUR ---
-                    # Le prix de la palette (i) ne doit jamais être inférieur à la palette (i-1)
-                    # Sauf pour la palette 1 qui n'a pas de précédent
-                    
+                    # Le calcul théorique pur
                     calc_current = f"{price_full_floored} * {curve}"
                     
+                    # --- LA REGLE D'OR (CLIQUET) ---
+                    # Le prix doit être sup à 120 ET sup au prix précédent + 5€
                     if i == 1:
-                        # Pas de précédent
                         formula = f"=IF($B{row+1}>0, MAX(120, {calc_current}), 0)"
                     else:
-                        # On compare avec la cellule de gauche (i-1)
-                        # xlsxwriter permet de référencer des cellules
                         prev_cell = xlsxwriter.utility.xl_rowcol_to_cell(row, col_idx - 1)
-                        formula = f"=IF($B{row+1}>0, MAX(120, {calc_current}, {prev_cell}), 0)"
+                        # On force le prix actuel à être au moins (Prix_Precedent + 5€)
+                        formula = f"=IF($B{row+1}>0, MAX(120, {calc_current}, {prev_cell}+5), 0)"
                     
                     style = fmt_bold_price if i == max_pal else fmt_currency
                     ws.write_formula(row, col_idx, formula, style)
@@ -376,14 +385,14 @@ if mode == "Calculateur Rapide":
         if "80x120" in unit_type:
             qty = st.number_input("Nb Pal (80x120)", 1, 33, 3)
             ratio = qty / 33
-            if qty == 1: power_factor = 0.40; cle_tarif = "P40"
+            if qty == 1: power_factor = 0.38; cle_tarif = "P38" # Coeff lissé
             elif qty <= 5: power_factor = 0.45; cle_tarif = "P45"
             elif qty <= 15: power_factor = 0.75; cle_tarif = "P39"
             else: power_factor = 0.90; cle_tarif = "P26"
         elif "100x120" in unit_type:
             qty = st.number_input("Nb Pal (100x120)", 1, 26, 3)
             ratio = qty / 26
-            if qty == 1: power_factor = 0.40; cle_tarif = "P40"
+            if qty == 1: power_factor = 0.38; cle_tarif = "P38"
             elif qty <= 4: power_factor = 0.45; cle_tarif = "P45"
             elif qty <= 12: power_factor = 0.75; cle_tarif = "P39"
             else: power_factor = 0.90; cle_tarif = "P26"
