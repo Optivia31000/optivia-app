@@ -10,10 +10,11 @@ st.markdown("""
     .buy-limit { font-size: 32px !important; font-weight: bold; color: #DC2626; } 
     .kpi-card { background-color: #F3F4F6; padding: 15px; border-radius: 10px; border-left: 5px solid #1E3A8A; margin-bottom: 10px;}
     .zone-info { color: #854d0e; background-color: #fef9c3; padding: 10px; border-radius: 5px; font-weight: bold; margin-bottom: 10px;}
+    .big-input .stNumberInput > div > div > input { font-size: 20px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- BASE DE DONNÉES GÉOGRAPHIQUE (NETTOYÉE ET FORMATÉE 01-95) ---
+# --- BASE DE DONNÉES GÉOGRAPHIQUE ---
 FULL_GEO_DATA = {
     "01 - Ain": ["Belley", "Bourg-en-Bresse", "Gex", "Nantua"],
     "02 - Aisne": ["Château-Thierry", "Laon", "Saint-Quentin", "Soissons", "Vervins"],
@@ -113,8 +114,7 @@ FULL_GEO_DATA = {
     "98 - Monaco": ["Monaco"]
 }
 
-# --- FONCTION FLUX (Zones Fortes vs Faibles) ---
-# Liste des départements "Zones Fortes" (Export)
+# --- FONCTION FLUX ---
 ZONES_FORTES = ["59", "62", "75", "92", "93", "94", "69", "67", "68", "44", "35", "31"]
 
 def get_flux_coef(dep_full_name_start, dep_full_name_end):
@@ -122,20 +122,20 @@ def get_flux_coef(dep_full_name_start, dep_full_name_end):
     code_end = dep_full_name_end.split(" - ")[0]
     
     coef = 1.0
-    # 1. Départ Zone Forte vers Province (Prix Fort)
+    # 1. Départ Zone Forte vers Province (Cher)
     if code_start in ZONES_FORTES and code_end not in ZONES_FORTES:
-        coef = 1.05 # +5%
-    # 2. Retour Province vers Zone Forte (Prix Faible)
+        coef = 1.05 
+    # 2. Retour Province vers Zone Forte (Moins cher)
     elif code_start not in ZONES_FORTES and code_end in ZONES_FORTES:
-        coef = 0.92 # -8%
-        
-    return coef, code_start, code_end
+        coef = 0.92 
+    return coef
 
-# --- SIDEBAR ---
+# --- SIDEBAR (NOUVEAUX RÉGLAGES MARCHÉ) ---
 with st.sidebar:
     st.header("⚙️ Moteur Tarifret")
-    base_km_sell = st.number_input("Prix Vente / Km (€)", value=1.55, step=0.05)
-    fixed_sell = st.number_input("Fixe Vente (€)", value=250, step=10)
+    # J'ai baissé ces valeurs pour coller à ton marché (655€ pour 441km)
+    base_km_sell = st.number_input("Prix Vente / Km (€)", value=1.30, step=0.05)
+    fixed_sell = st.number_input("Fixe Vente (€)", value=80, step=10)
     st.divider()
     target_margin = st.slider("Objectif Marge (%)", 15, 40, 25)
 
@@ -147,22 +147,26 @@ st.subheader("📍 Origine & Destination")
 
 c1, c2 = st.columns([1, 1])
 with c1:
-    dept_start = st.selectbox("DÉPART", list(FULL_GEO_DATA.keys()), index=30) # Default 31
+    dept_start = st.selectbox("DÉPART", list(FULL_GEO_DATA.keys()), index=10) # 11 Aude
     city_start = st.selectbox("Ville Départ", FULL_GEO_DATA[dept_start])
 
 with c2:
-    dept_end = st.selectbox("ARRIVÉE", list(FULL_GEO_DATA.keys()), index=74) # Default 75
+    dept_end = st.selectbox("ARRIVÉE", list(FULL_GEO_DATA.keys()), index=16) # 17 Charente
     city_end = st.selectbox("Ville Arrivée", FULL_GEO_DATA[dept_end])
 
 # --- DISTANCE & FLUX ---
 st.markdown("---")
 c_dist, c_info = st.columns([1, 2])
+
 with c_dist:
-    dist_reelle = st.number_input("Distance Réelle (km)", min_value=1, value=700)
+    st.markdown("👇 **SAISIR LES KM ICI**")
+    # MISE A ZERO PAR DEFAUT
+    dist_reelle = st.number_input("Distance Réelle (km)", min_value=0, value=0)
+    st.caption("Distance Google Maps")
 
 # Calcul Flux
-flux_coef, code_s, code_e = get_flux_coef(dept_start, dept_end)
-flux_label = ""
+flux_coef = get_flux_coef(dept_start, dept_end)
+flux_label = "➡️ Flux Standard"
 flux_color = "blue"
 
 if flux_coef > 1: 
@@ -171,15 +175,16 @@ if flux_coef > 1:
 elif flux_coef < 1: 
     flux_label = "📉 Flux Retour (-8%)"
     flux_color = "green"
-else: 
-    flux_label = "➡️ Flux Standard"
 
 with c_info:
-    # Affichage intelligent du flux
     if flux_coef != 1.0:
         st.markdown(f"<div class='zone-info' style='color:{flux_color}'>{flux_label}</div>", unsafe_allow_html=True)
+    
+    # Alerte si distance est à 0
+    if dist_reelle == 0:
+        st.warning("⚠️ Merci de saisir la distance réelle pour calculer le prix.")
     else:
-        st.info(f"Flux : {flux_label}")
+        st.success(f"Calcul sur base {dist_reelle} km")
 
 # --- BLOC 2 : MARCHANDISE ---
 st.subheader("📦 La Marchandise")
@@ -222,40 +227,41 @@ with c_opt2:
     opt_adr = st.checkbox("ADR (+20%)")
     opt_frais = st.checkbox("Frais Dossier (+15€)", value=True)
 with c_opt3:
-    # LA GESTION "MONTAGNE / DIFFICILE"
     st.markdown("**Accès Difficile / Montagne**")
     opt_montagne = st.checkbox("Activer Majoration (+25%)")
-    if opt_montagne:
-        st.caption("Applique +25% sur le transport (Ex: Luchon, Corse, Stations...)")
 
 # --- MOTEUR DE CALCUL FINAL ---
-# 1. Base km
-base_price = (dist_reelle * base_km_sell) + fixed_sell
+if dist_reelle > 0:
+    # 1. Base km (AVEC NOUVEAUX PARAMETRES)
+    base_price = (dist_reelle * base_km_sell) + fixed_sell
 
-# 2. Application Coef Flux (Nord/Sud)
-base_price_geo = base_price * flux_coef 
+    # 2. Application Coef Flux
+    base_price_geo = base_price * flux_coef 
 
-# 3. Application Partiel (Courbe Tarifret)
-final_base = base_price_geo * (ratio ** power_factor)
+    # 3. Application Partiel
+    final_base = base_price_geo * (ratio ** power_factor)
 
-if final_base < 120: final_base = 120
+    if final_base < 120: final_base = 120
 
-# 4. Majoration Montagne (S'applique sur le transport pur)
-if opt_montagne:
-    final_base = final_base * 1.25
+    # 4. Majoration Montagne
+    if opt_montagne:
+        final_base = final_base * 1.25
 
-# 5. Options forfaitaires
-options_val = 0
-if opt_hayon: options_val += 50
-if opt_stop: options_val += 50
-if opt_frais: options_val += 15
-if opt_adr: 
-    adr = final_base * 0.20
-    if adr < 30: adr = 30
-    options_val += adr
+    # 5. Options
+    options_val = 0
+    if opt_hayon: options_val += 50
+    if opt_stop: options_val += 50
+    if opt_frais: options_val += 15
+    if opt_adr: 
+        adr = final_base * 0.20
+        if adr < 30: adr = 30
+        options_val += adr
 
-FINAL_SELL = final_base + options_val
-MAX_BUY = FINAL_SELL * (1 - (target_margin/100))
+    FINAL_SELL = final_base + options_val
+    MAX_BUY = FINAL_SELL * (1 - (target_margin/100))
+else:
+    FINAL_SELL = 0
+    MAX_BUY = 0
 
 # --- RÉSULTATS ---
 st.divider()
@@ -264,18 +270,19 @@ r1, r2 = st.columns(2)
 with r1:
     st.markdown('<div class="kpi-card">', unsafe_allow_html=True)
     st.markdown("### 💰 PRIX CLIENT")
-    st.markdown(f'<p class="client-price">{FINAL_SELL:.0f} € HT</p>', unsafe_allow_html=True)
-    
-    details_txt = f"Clé: {cle_tarif}"
-    if flux_coef != 1: details_txt += f" | {flux_label}"
-    if opt_montagne: details_txt += " | 🏔️ Montagne"
-    
-    st.caption(details_txt)
+    if dist_reelle > 0:
+        st.markdown(f'<p class="client-price">{FINAL_SELL:.0f} € HT</p>', unsafe_allow_html=True)
+        st.caption(f"Clé: {cle_tarif} | {dist_reelle} km")
+    else:
+        st.warning("Saisir distance")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with r2:
     st.markdown('<div class="kpi-card" style="border-left: 5px solid #DC2626;">', unsafe_allow_html=True)
     st.markdown("### 🛑 ACHAT MAX")
-    st.markdown(f'<p class="buy-limit">{MAX_BUY:.0f} € HT</p>', unsafe_allow_html=True)
-    st.caption(f"Plafond pour {target_margin}% de marge")
+    if dist_reelle > 0:
+        st.markdown(f'<p class="buy-limit">{MAX_BUY:.0f} € HT</p>', unsafe_allow_html=True)
+        st.caption(f"Plafond pour {target_margin}% de marge")
+    else:
+        st.write("-")
     st.markdown('</div>', unsafe_allow_html=True)
