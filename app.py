@@ -180,7 +180,7 @@ def get_flux_coef(dep_full_name_start, dep_full_name_end):
     elif code_start not in ZONES_FORTES and code_end in ZONES_FORTES: coef = 0.92 
     return coef
 
-# --- GÉNÉRATEUR EXCEL (OPTIMISÉ V20) ---
+# --- GÉNÉRATEUR EXCEL (V21 - MATRICE PRO) ---
 def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
     output = io.BytesIO()
     code_dep_start = dept_depart.split(" - ")[0]
@@ -222,16 +222,30 @@ def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
         def create_sheet(sheet_name, max_pal, pal_type_label):
             ws = workbook.add_worksheet(sheet_name)
             
-            # --- PARAMÉTRAGE DES FACTEURS LISSÉS ---
-            # Pour éviter les trous, on lisse les facteurs sur les 10 premières palettes
-            # Au lieu de sauter de 0.40 à 0.75, on progresse doucement
+            # --- MATRICE DE PROGRESSION (POURCENTAGE DU COMPLET) ---
+            # Le prix d'une palette est défini comme un % du prix complet
+            # Cette méthode évite les cassures et garantit ta progression
             
-            # Dictionnaire de facteurs spécifiques (Progression type "Messagerie")
-            FACTORS_80 = {
-                1: 0.38, 2: 0.42, 3: 0.48, 4: 0.52, 5: 0.58, 
-                6: 0.65, 7: 0.70, 8: 0.75, 9: 0.78, 10: 0.80
-            }
+            # Si le complet vaut 100%, alors 1 palette vaut X%
+            # Basé sur ton exemple: 120, 130, 160, 183... pour un complet théorique ~450
+            PERCENT_MATRIX = {}
             
+            if max_pal == 33: # 80x120
+                PERCENT_MATRIX = {
+                    1: 0.26, 2: 0.29, 3: 0.35, 4: 0.40, 5: 0.42, 6: 0.46,
+                    7: 0.50, 8: 0.54, 9: 0.58, 10: 0.62, 12: 0.70, 15: 0.78, 20: 0.88, 33: 1.0
+                }
+            elif max_pal == 26: # 100x120 (Un peu plus cher au démarrage)
+                PERCENT_MATRIX = {
+                    1: 0.28, 2: 0.32, 3: 0.38, 4: 0.44, 5: 0.48, 6: 0.52,
+                    8: 0.60, 12: 0.75, 18: 0.88, 26: 1.0
+                }
+            elif max_pal == 24: # 120x120 (Encore plus cher)
+                PERCENT_MATRIX = {
+                    1: 0.30, 2: 0.35, 3: 0.42, 4: 0.48, 5: 0.52, 6: 0.58,
+                    8: 0.65, 12: 0.80, 18: 0.90, 24: 1.0
+                }
+
             logo_path = "logo.png"
             logo_inserted = False
             if os.path.exists(logo_path):
@@ -268,42 +282,38 @@ def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
                 for i in range(1, max_pal + 1):
                     col_idx = i + 1
                     
-                    if max_pal == 33: # 80x120
-                        ratio = i / 33
-                        # Utilisation des facteurs lissés ou standard
-                        if i in FACTORS_80:
-                            factor = FACTORS_80[i]
-                        elif i <= 15: factor = 0.85
-                        else: factor = 0.92
+                    # 1. Calcul du PRIX COMPLET REFERENCE (Socle)
+                    # Formule Excel pour le complet (Socle)
+                    base_calc = f"(($B{row+1}*{base_km}+{base_fixe})*{flux})"
+                    # Application du plancher régional sur ce socle
+                    price_full = f"MAX({base_calc}, {min_regional})"
+                    
+                    # 2. Détermination du Pourcentage (Ratio) pour la palette i
+                    # Si le ratio est dans la matrice, on le prend
+                    if i in PERCENT_MATRIX:
+                        ratio_val = PERCENT_MATRIX[i]
+                    else:
+                        # Sinon on interpole (lissage linéaire entre les points connus)
+                        # Ex: si on a ratio pour 6 et 12, et qu'on veut 9
+                        lower_k = max([k for k in PERCENT_MATRIX.keys() if k < i])
+                        upper_k = min([k for k in PERCENT_MATRIX.keys() if k > i])
                         
-                    elif max_pal == 26: # 100x120
-                        ratio = i / 26
-                        if i == 1: factor = 0.38
-                        elif i <= 4: factor = 0.45
-                        elif i <= 10: factor = 0.70
-                        else: factor = 0.90
+                        ratio_lower = PERCENT_MATRIX[lower_k]
+                        ratio_upper = PERCENT_MATRIX[upper_k]
                         
-                    elif max_pal == 24: # 120x120
-                        ratio = i / 24
-                        if i == 1: factor = 0.37
-                        elif i <= 4: factor = 0.42
-                        elif i <= 10: factor = 0.75
-                        else: factor = 0.95
+                        # Formule d'interpolation
+                        progress = (i - lower_k) / (upper_k - lower_k)
+                        ratio_val = ratio_lower + progress * (ratio_upper - ratio_lower)
                     
-                    price_full_theo = f"(($B{row+1}*{base_km}+{base_fixe})*{flux})"
-                    price_full_floored = f"MAX({price_full_theo}, {min_regional})"
-                    curve = f"POWER({ratio},{factor})"
+                    # 3. Formule Finale : Prix = Prix_Complet * Ratio
+                    # Avec sécurité : jamais moins de 120€, et jamais moins que la palette précédente + 5€
                     
-                    # Le calcul théorique pur
-                    calc_current = f"{price_full_floored} * {curve}"
+                    calc_current = f"{price_full} * {ratio_val:.4f}"
                     
-                    # --- LA REGLE D'OR (CLIQUET) ---
-                    # Le prix doit être sup à 120 ET sup au prix précédent + 5€
                     if i == 1:
                         formula = f"=IF($B{row+1}>0, MAX(120, {calc_current}), 0)"
                     else:
                         prev_cell = xlsxwriter.utility.xl_rowcol_to_cell(row, col_idx - 1)
-                        # On force le prix actuel à être au moins (Prix_Precedent + 5€)
                         formula = f"=IF($B{row+1}>0, MAX(120, {calc_current}, {prev_cell}+5), 0)"
                     
                     style = fmt_bold_price if i == max_pal else fmt_currency
@@ -385,14 +395,14 @@ if mode == "Calculateur Rapide":
         if "80x120" in unit_type:
             qty = st.number_input("Nb Pal (80x120)", 1, 33, 3)
             ratio = qty / 33
-            if qty == 1: power_factor = 0.38; cle_tarif = "P38" # Coeff lissé
+            if qty == 1: power_factor = 0.40; cle_tarif = "P40"
             elif qty <= 5: power_factor = 0.45; cle_tarif = "P45"
             elif qty <= 15: power_factor = 0.75; cle_tarif = "P39"
             else: power_factor = 0.90; cle_tarif = "P26"
         elif "100x120" in unit_type:
             qty = st.number_input("Nb Pal (100x120)", 1, 26, 3)
             ratio = qty / 26
-            if qty == 1: power_factor = 0.38; cle_tarif = "P38"
+            if qty == 1: power_factor = 0.40; cle_tarif = "P40"
             elif qty <= 4: power_factor = 0.45; cle_tarif = "P45"
             elif qty <= 12: power_factor = 0.75; cle_tarif = "P39"
             else: power_factor = 0.90; cle_tarif = "P26"
