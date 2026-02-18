@@ -180,7 +180,7 @@ def get_flux_coef(dep_full_name_start, dep_full_name_end):
     elif code_start not in ZONES_FORTES and code_end in ZONES_FORTES: coef = 0.92 
     return coef
 
-# --- GÉNÉRATEUR EXCEL (V22 - MATRICE FORCÉE) ---
+# --- GÉNÉRATEUR EXCEL (V23 - FINALE DEBUGUÉE) ---
 def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
     output = io.BytesIO()
     code_dep_start = dept_depart.split(" - ")[0]
@@ -223,31 +223,30 @@ def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
             ws = workbook.add_worksheet(sheet_name)
             
             # --- MATRICE DE PLANCHERS ABSOLUS (€) ---
-            # Pour éviter les prix trop bas en régional, on impose ces minimums
-            # Basé sur ton exemple: 120, 130, 160, 183, 190, 206
             FLOOR_MATRIX = {}
+            # --- MATRICE DE RATIOS COMPLETS (avec le point final 100%) ---
+            PERCENT_MATRIX = {}
             
             if max_pal == 33: # 80x120
                 FLOOR_MATRIX = {
                     1: 120, 2: 130, 3: 160, 4: 183, 5: 190, 6: 206,
                     7: 220, 8: 235, 9: 250, 10: 265
                 }
-                # Ratios pour les longues distances (pourcentage du complet)
-                PERCENT_MATRIX = {1: 0.26, 3: 0.35, 6: 0.46, 12: 0.70, 20: 0.88}
+                PERCENT_MATRIX = {1: 0.26, 3: 0.35, 6: 0.46, 12: 0.70, 20: 0.88, 33: 1.0}
 
-            elif max_pal == 26: # 100x120 (Un peu plus cher)
+            elif max_pal == 26: # 100x120
                 FLOOR_MATRIX = {
                     1: 125, 2: 140, 3: 175, 4: 195, 5: 210, 6: 225,
                     7: 240, 8: 255
                 }
-                PERCENT_MATRIX = {1: 0.28, 3: 0.38, 6: 0.52, 12: 0.75}
+                PERCENT_MATRIX = {1: 0.28, 3: 0.38, 6: 0.52, 12: 0.75, 20: 0.90, 26: 1.0}
 
             elif max_pal == 24: # 120x120
                 FLOOR_MATRIX = {
                     1: 135, 2: 155, 3: 190, 4: 215, 5: 230, 6: 245,
                     7: 260
                 }
-                PERCENT_MATRIX = {1: 0.30, 3: 0.42, 6: 0.58, 12: 0.80}
+                PERCENT_MATRIX = {1: 0.30, 3: 0.42, 6: 0.58, 12: 0.80, 20: 0.95, 24: 1.0}
 
             logo_path = "logo.png"
             logo_inserted = False
@@ -285,12 +284,10 @@ def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
                 for i in range(1, max_pal + 1):
                     col_idx = i + 1
                     
-                    # 1. Calcul du PRIX COMPLET REFERENCE (Socle)
                     base_calc = f"(($B{row+1}*{base_km}+{base_fixe})*{flux})"
                     price_full = f"MAX({base_calc}, {min_regional})"
                     
-                    # 2. Ratio (Calcul Théorique Longue Distance)
-                    # Interpolation simple si pas dans la liste
+                    # Interpolation robuste
                     lower_k = max([k for k in PERCENT_MATRIX.keys() if k <= i] or [1])
                     upper_k = min([k for k in PERCENT_MATRIX.keys() if k >= i] or [max_pal])
                     
@@ -301,19 +298,13 @@ def generate_excel_grid(dept_depart, base_km, base_fixe, min_regional):
                         ratio_upper = PERCENT_MATRIX[upper_k]
                         ratio_val = ratio_lower + (i - lower_k) / (upper_k - lower_k) * (ratio_upper - ratio_lower)
                     
-                    # 3. Formule : MAX(Calcul_Theorique, PLANCHER_IMPOSÉ)
                     calc_theo = f"{price_full} * {ratio_val:.4f}"
-                    
-                    # Récupération du plancher imposé s'il existe (ex: 160€ pour 3 pal)
                     hard_floor = FLOOR_MATRIX.get(i, 0)
                     
-                    # Sécurité supplémentaire : +5€ par rapport à la case précédente
                     if i == 1:
-                        # Pour la 1ère palette : Max(Theo, Plancher_1)
                         formula = f"=IF($B{row+1}>0, MAX({calc_theo}, {hard_floor}), 0)"
                     else:
                         prev_cell = xlsxwriter.utility.xl_rowcol_to_cell(row, col_idx - 1)
-                        # Pour les suivantes : Max(Theo, Plancher_i, Precedente+5)
                         formula = f"=IF($B{row+1}>0, MAX({calc_theo}, {hard_floor}, {prev_cell}+5), 0)"
                     
                     style = fmt_bold_price if i == max_pal else fmt_currency
