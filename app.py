@@ -9,7 +9,8 @@ DEPTS = {1: "Ain", 2: "Aisne", 3: "Allier", 4: "Alpes-de-Haute-Provence", 5: "Ha
 def run_calc(orig, dest, km, gas, unit, qty, opts, p_km, p_fixe):
     if dest == 98: return "Tarif sur demande", "Tarif sur demande"
     coeff = {'80x120': 1.0, '100x120': 1.35, '120x120': 1.6, 'Complet': 8.5}
-    f_mult, dist_f = coeff.get(unit, 1.0), (km / 500) ** -0.45
+    f_mult = coeff.get(unit, 1.0)
+    dist_f = (km / 500) ** -0.45
     surcharge = ((gas - 1.40) / 1.40) * 0.22
     nord = [59, 62, 80, 2, 8, 51, 10, 52, 54, 55, 57, 67, 68, 88, 70, 25, 90, 21, 75, 77, 78, 91, 92, 93, 94, 95]
     tension = 1.22 if (orig in nord) else 1.00
@@ -17,15 +18,21 @@ def run_calc(orig, dest, km, gas, unit, qty, opts, p_km, p_fixe):
     p_a = (((km * 0.18 * dist_f) + 31) * tension * (1 + surcharge)) * f_mult * (qty ** 0.62)
     c_opt = 1.0 + (0.25 if opts['ADR'] else 0) + (0.25 if opts['MTN'] else 0)
     res_v, res_a = p_v * c_opt, p_a * c_opt
-    if opts['HYN']: res_v += 50; res_a += 35
+    if opts['HYN']:
+        res_v += 50
+        res_a += 35
     return int(round(res_v, 0)), int(round(res_a, 0))
 
 # --- INTERFACE ---
 st.set_page_config(page_title=BRAND, layout="centered")
 
-# Gestion du Logo (Recherche large)
-logo_files = ["logo_optivia.png", "logo_optivia.PNG", "Logo_optivia.png", "LOGO_OPTIVIA.png"]
-logo_path = next((f for f in logo_files if os.path.exists(f)), None)
+# Système de détection automatique du logo
+logo_path = None
+# On cherche un fichier qui commence par 'logo_optivia' avec n'importe quelle extension d'image
+for f in os.listdir("."):
+    if f.lower().startswith("logo_optivia") and f.lower().endswith((".png", ".jpg", ".jpeg", ".svg")):
+        logo_path = f
+        break
 
 col_l1, col_l2 = st.columns([1, 2])
 with col_l1:
@@ -33,6 +40,8 @@ with col_l1:
         st.image(logo_path, width=200)
     else:
         st.write(f"🏷️ **{BRAND}**")
+        # Diagnostic en cas d'erreur (visible uniquement si le logo est absent)
+        st.caption("Fichiers détectés : " + ", ".join(os.listdir(".")[:10]))
 with col_l2:
     st.title(BRAND)
 
@@ -49,7 +58,7 @@ src = col1.selectbox("DÉPART", d_keys, format_func=lambda x: f"{str(x).zfill(2)
 dst = col2.selectbox("ARRIVÉE", d_keys, format_func=lambda x: f"{str(x).zfill(2)} - {DEPTS[x]}", index=d_keys.index(75))
 
 st.subheader("👇 DISTANCE RÉELLE")
-# Exception 31-75 pour coller à ton ancienne API
+# Forçage de la distance Toulouse-Paris à 677 km
 dist_auto = 677 if (src == 31 and dst == 75) else (abs(src - (20 if isinstance(dst, str) else dst)) * 8 + 150)
 km_real = st.number_input(f"Saisir KM (Est. auto: {dist_auto} km)", value=dist_auto)
 
