@@ -28,6 +28,10 @@ col_logo_1, col_logo_2 = st.columns([1, 2])
 with col_logo_1:
     if os.path.exists("logo_optivia.png"):
         st.image("logo_optivia.png", width=200)
+     else:
+        # Message d'alerte pour debug (à supprimer après)
+        st.error("⚠️ Fichier 'logo_optivia.png' introuvable sur le serveur.")
+        st.write("Fichiers présents :", os.listdir("."))   
 with col_logo_2:
     st.title(BRAND)
 
