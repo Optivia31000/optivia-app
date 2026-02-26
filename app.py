@@ -23,14 +23,17 @@ def run_calc(orig, dest, km, gas, unit, qty, opts, p_km, p_fixe):
 # --- INTERFACE ---
 st.set_page_config(page_title=BRAND, layout="centered")
 
-# Fixation radicale du logo sur 'logo.png'
-col_l1, col_l2 = st.columns([1, 2])
+# Header avec Logo Agrandi (350px)
+col_l1, col_l2 = st.columns([2, 3]) # Ajustement des colonnes pour laisser de la place au logo
 with col_l1:
     if os.path.exists("logo.png"):
-        st.image("logo.png", width=200)
+        st.image("logo.png", width=350) # <--- TAILLE AUGMENTÉE ICI
     else:
         st.write(f"🏷️ **{BRAND}**")
 with col_l2:
+    # Centrage vertical du titre par rapport au logo
+    st.write("")
+    st.write("")
     st.title(BRAND)
 
 with st.expander("⚙️ Moteur & Export"):
